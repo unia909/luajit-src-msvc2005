@@ -222,6 +222,86 @@ static void *err_unwind(lua_State *L, void *stopcf, int errcode)
 #if LJ_TARGET_X86
 typedef void *UndocumentedDispatcherContext;  /* Unused on x86. */
 #else
+// MSVC 2005 PATCH BEGIN
+
+#define UNWIND_HISTORY_TABLE_SIZE 12
+
+typedef struct _UNWIND_HISTORY_TABLE_ENTRY
+{
+    ULONG64 ImageBase;
+    PRUNTIME_FUNCTION FunctionEntry;
+} UNWIND_HISTORY_TABLE_ENTRY, *PUNWIND_HISTORY_TABLE_ENTRY;
+
+typedef struct _UNWIND_HISTORY_TABLE
+{
+    ULONG Count;
+    UCHAR Search;
+    ULONG64 LowAddress;
+    ULONG64 HighAddress;
+    UNWIND_HISTORY_TABLE_ENTRY Entry[UNWIND_HISTORY_TABLE_SIZE];
+} UNWIND_HISTORY_TABLE, *PUNWIND_HISTORY_TABLE;
+
+#define UNW_FLAG_NHANDLER 0
+
+NTSYSAPI VOID RtlUnwindEx(PVOID TargetFrame, PVOID TargetIp, PEXCEPTION_RECORD ExceptionRecord, PVOID ReturnValue, PCONTEXT ContextRecord, PUNWIND_HISTORY_TABLE HistoryTable);
+
+NTSYSAPI PRUNTIME_FUNCTION RtlLookupFunctionEntry(DWORD64 ControlPc, PDWORD64 ImageBase, PUNWIND_HISTORY_TABLE HistoryTable);
+
+typedef struct _KNONVOLATILE_CONTEXT_POINTERS {
+    union {
+        PM128A FloatingContext[16];
+        struct {
+            PM128A Xmm0;
+            PM128A Xmm1;
+            PM128A Xmm2;
+            PM128A Xmm3;
+            PM128A Xmm4;
+            PM128A Xmm5;
+            PM128A Xmm6;
+            PM128A Xmm7;
+            PM128A Xmm8;
+            PM128A Xmm9;
+            PM128A Xmm10;
+            PM128A Xmm11;
+            PM128A Xmm12;
+            PM128A Xmm13;
+            PM128A Xmm14;
+            PM128A Xmm15;
+        } DUMMYSTRUCTNAME;
+    } DUMMYUNIONNAME;
+
+    union {
+        PDWORD64 IntegerContext[16];
+        struct {
+            PDWORD64 Rax;
+            PDWORD64 Rcx;
+            PDWORD64 Rdx;
+            PDWORD64 Rbx;
+            PDWORD64 Rsp;
+            PDWORD64 Rbp;
+            PDWORD64 Rsi;
+            PDWORD64 Rdi;
+            PDWORD64 R8;
+            PDWORD64 R9;
+            PDWORD64 R10;
+            PDWORD64 R11;
+            PDWORD64 R12;
+            PDWORD64 R13;
+            PDWORD64 R14;
+            PDWORD64 R15;
+        } DUMMYSTRUCTNAME;
+    } DUMMYUNIONNAME2;
+
+} KNONVOLATILE_CONTEXT_POINTERS, *PKNONVOLATILE_CONTEXT_POINTERS;
+
+typedef NTAPI EXCEPTION_ROUTINE(PEXCEPTION_RECORD ExceptionRecord, PVOID EstablisherFrame, PCONTEXT ContextRecord, PVOID DispatcherContext);
+
+typedef EXCEPTION_ROUTINE *PEXCEPTION_ROUTINE;
+
+NTSYSAPI PEXCEPTION_ROUTINE RtlVirtualUnwind(DWORD HandlerType, DWORD64 ImageBase, DWORD64 ControlPc, PRUNTIME_FUNCTION FunctionEntry, PCONTEXT ContextRecord, PVOID *HandlerData, PDWORD64 EstablisherFrame, PKNONVOLATILE_CONTEXT_POINTERS ContextPointers);
+
+/* MSVC 2005 PATCH END */
+
 /* Taken from: http://www.nynaeve.net/?p=99 */
 typedef struct UndocumentedDispatcherContext {
   ULONG64 ControlPc;
@@ -777,7 +857,6 @@ LJ_NOINLINE void lj_err_mem(lua_State *L)
 {
   if (L->status == LUA_ERRERR+1)  /* Don't touch the stack during lua_open. */
     lj_vm_unwind_c(L->cframe, LUA_ERRMEM);
-  if (curr_funcisL(L)) L->top = curr_topL(L);
   setstrV(L, L->top++, lj_err_str(L, LJ_ERR_ERRMEM));
   lj_err_throw(L, LUA_ERRMEM);
 }
